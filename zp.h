@@ -6,12 +6,12 @@
 struct Codec;
 typedef unsigned char Context;
 
-struct Codec *zp_new_encoder(void);
+struct Codec *zp_new_encoder(void (*)(unsigned char, void *), void *);
 void zp_encode(struct Codec *, int, Context *);
 void zp_encode_passthrough(struct Codec *, int);
 void zp_flush(struct Codec *);
 
-struct Codec *zp_new_decoder(void);
+struct Codec *zp_new_decoder(unsigned char (*)(void *), void *);
 
 void zp_codec_delete(struct Codec *);
 
