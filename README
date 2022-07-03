@@ -1,0 +1,6 @@
+Files zp.c and zp.h repackage the Zprime-Coder binary arithmetic coder from
+DjVuLibre (libdjvu) as a standalone C library. The goal is to make it easier to
+test new implementations of the Zprime-Coder, in particular `sndjvu_codec::zp`.
+
+This is a derivative work of DjVuLibre, and is made available under the same
+terms (GPL version 2 or later, see LICENSE).
