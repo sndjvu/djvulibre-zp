@@ -2,7 +2,11 @@
 
 #include "zp.h"
 
+#include <assert.h>
 #include <stdlib.h>
+
+static_assert(sizeof(short) == 2);
+static_assert(sizeof(int) == 4);
 
 struct Entry {
 	unsigned short p;
@@ -434,8 +438,133 @@ void zp_encode_passthrough(struct Codec *encoder, int bit) {
 	}
 }
 
+static void preload(struct Codec *decoder) {
+	while (decoder->scount <= 24) {
+		decoder->byte = decoder->get(decoder->env);
+		decoder->buffer = (decoder->buffer << 8) | decoder->byte;
+		decoder->scount += 8;
+	}
+}
+
 struct Codec *zp_new_decoder(unsigned char (*get)(void *), void *env) {
-	abort(); // TODO
+	struct Codec *decoder = malloc(sizeof(struct Codec));
+	if (!decoder) {
+		abort();
+	}
+
+	decoder->get = get;
+	decoder->env = env;
+
+	decoder->a = 0;
+	decoder->byte = decoder->get(decoder->env);
+	decoder->code = decoder->byte << 8;
+	decoder->byte = decoder->get(decoder->env);
+	decoder->code = decoder->code | decoder->byte;
+	decoder->delay = 25;
+	decoder->scount = 0;
+	preload(decoder);
+	decoder->fence = decoder->code;
+	if (decoder->code >= 0x8000) {
+		decoder->fence = 0x7fff;
+	}
+
+	return decoder;
+}
+
+static int ffz(unsigned int x) {
+	if (x > 0xffff) {
+		abort();
+	} else if (x == 0xffff) {
+		return 16;
+	} else {
+		return __builtin_clz(~x & 0xffff) - 16;
+	}
+}
+
+static int decode_sub(struct Codec *decoder, Context *ctx, unsigned int z) {
+	int bit = *ctx & 1;
+	unsigned int d = 0x6000 + ((z + decoder->a) >> 2);
+	if (z > d) {
+		z = d;
+	}
+	if (z > decoder->code) {
+		z = 0x10000 - z;
+		decoder->a = decoder->a + z;
+		decoder->code= decoder->code + z;
+		*ctx = table[*ctx].dn;
+		int shift = ffz(decoder->a);
+		decoder->scount -= shift;
+		decoder->a = (unsigned short)(decoder->a << shift);
+		decoder->code = (unsigned short)(decoder->code << shift) | ((decoder->buffer >> decoder->scount) & ((1 << shift) - 1));
+		if (decoder->scount < 16) {
+			preload(decoder);
+		}
+		decoder->fence = decoder->code;
+		if (decoder->code >= 0x8000) {
+			decoder->fence = 0x7fff;
+		}
+		return bit ^ 1;
+	} else {
+		if (decoder->a >= table[*ctx].m) {
+			*ctx = table[*ctx].up;
+		}
+		decoder->scount -= 1;
+		decoder->a = (unsigned short)(z << 1);
+		decoder->code = (unsigned short)(decoder->code << 1) | ((decoder->buffer >> decoder->scount) & 1);
+		if (decoder->scount < 16) {
+			preload(decoder);
+		}
+		decoder->fence = decoder->code;
+		if (decoder->code >= 0x8000) {
+			decoder->fence = 0x7fff;
+		}
+		return bit;
+	}
+}
+
+static int decode_sub_simple(struct Codec *decoder, int mps, unsigned int z) {
+	if (z > decoder->code) {
+		z = 0x10000 - z;
+		decoder->a = decoder->a + z;
+		decoder->code = decoder->code + z;
+		int shift = ffz(decoder->a);
+		decoder->scount -= shift;
+		decoder->a = (unsigned short)(decoder->a << shift);
+		decoder->code = (unsigned short)(decoder->code << shift) | ((decoder->buffer >> decoder->scount) & ((1 << shift) - 1));
+		if (decoder->scount < 16) {
+			preload(decoder);
+		}
+		decoder->fence = decoder->code;
+		if (decoder->code >= 0x8000) {
+			decoder->fence = 0x7fff;
+		}
+		return mps ^ 1;
+	} else {
+		decoder->scount -= 1;
+		decoder->a = (unsigned short)(z << 1);
+		decoder->code = (unsigned short)(decoder->code << 1) | ((decoder->buffer >> decoder->scount) & 1);
+		if (decoder->scount < 16) {
+			preload(decoder);
+		}
+		decoder->fence = decoder->code;
+		if (decoder->code >= 0x8000) {
+			decoder->fence = 0x7fff;
+		}
+		return mps;
+	}
+}
+
+int zp_decode(struct Codec *decoder, Context *ctx) {
+	unsigned int z = decoder->a + table[*ctx].p;
+	if (z <= decoder->fence) {
+		decoder->a = z;
+		return *ctx & 1;
+	}
+	return decode_sub(decoder, ctx, z);
+}
+
+int zp_decode_passthrough(struct Codec *decoder) {
+	return decode_sub_simple(decoder, 0, 0x8000 + (decoder->a >> 1));
 }
 
 void zp_codec_delete(struct Codec *codec) {
