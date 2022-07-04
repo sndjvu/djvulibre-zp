@@ -3,19 +3,19 @@
 #include "zp.h"
 
 #include <assert.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 static_assert(sizeof(short) == 2);
 static_assert(sizeof(int) == 4);
 
-struct Entry {
+static struct {
 	unsigned short p;
 	unsigned short m;
 	Context up;
 	Context dn;
-};
-
-static struct Entry table[256] = {
+} table[256] = {
 	{0x8000, 0x0000,  84, 145},
 	{0x8000, 0x0000,   3,   4},
 	{0x8000, 0x0000,   4,   3},
@@ -273,35 +273,45 @@ struct Codec {
 	unsigned char byte;
 	unsigned char scount;
 	unsigned char delay;
-	unsigned int  a;
-	unsigned int  code;
-	unsigned int  fence;
-	unsigned int  subend;
-	unsigned int  buffer;
-	unsigned int  nrun;
+	unsigned int a;
+	unsigned int code;
+	unsigned int fence;
+	unsigned int subend;
+	unsigned int buffer;
+	unsigned int nrun;
 
 	unsigned char (*get)(void *);
 	void (*put)(unsigned char, void *);
 	void *env;
 };
 
+static void debug_log(const char *fmt, ...) {
+	(void)fmt;
+#ifdef ZP_DEBUG
+	va_list args;
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+#endif
+}
+
 struct Codec *zp_new_encoder(void (*put)(unsigned char, void *), void *env) {
-	struct Codec *codec = malloc(sizeof(struct Codec));
-	if (!codec) {
+	struct Codec *encoder = malloc(sizeof(struct Codec));
+	if (!encoder) {
 		abort();
 	}
 
-	codec->a = 0;
-	codec->scount = 0;
-	codec->byte = 0;
-	codec->delay = 25;
-	codec->subend = 0;
-	codec->buffer = 0xffffff;
-	codec->nrun = 0;
+	encoder->a = 0;
+	encoder->scount = 0;
+	encoder->byte = 0;
+	encoder->delay = 25;
+	encoder->subend = 0;
+	encoder->buffer = 0xffffff;
+	encoder->nrun = 0;
 
-	codec->put = put;
-	codec->env = env;
-	return codec;
+	encoder->put = put;
+	encoder->env = env;
+	return encoder;
 }
 
 static void outbit(struct Codec *encoder, int bit) {
@@ -313,9 +323,9 @@ static void outbit(struct Codec *encoder, int bit) {
 		encoder->byte = (encoder->byte << 1) | bit;
 		if (++encoder->scount == 8) {
 			encoder->put(encoder->byte, encoder->env);
+			encoder->scount = 0;
+			encoder->byte = 0;
 		}
-		encoder->scount = 0;
-		encoder->byte = 0;
 	}
 }
 
