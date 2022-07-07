@@ -359,7 +359,7 @@ static void zemit(struct Codec *encoder, int b) {
 void zp_flush(struct Codec *encoder) {
 	if (encoder->subend > 0x8000) {
 		encoder->subend = 0x10000;
-	} else if (encoder->subend == 0) {
+	} else if (encoder->subend > 0) {
 		encoder->subend = 0x8000;
 	}
 	while (encoder->buffer != 0xffffff || encoder->subend) {
